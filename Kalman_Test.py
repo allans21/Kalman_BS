@@ -1,6 +1,7 @@
 import pandas 
 import plotly.graph_objects as graph
 import numpy as np
+import math
 
 
 DF = pandas.read_csv('SKYPILOT_BODY_2019.csv', encoding = 'ISO-8859-1')
@@ -11,63 +12,55 @@ for i in list(DF):
 #if you wanna see that shit
 #fig = graph.Figure(data = graph.Scatter(x = DF['Time (ms)'], y = DF['Our - Altitude (m)'], mode = 'markers'))
 #fig.show()
-def calcuate_angle(angular_velocity, time, angle):
-	return angular_velocity*time + angle
 
-#helper list, change these based off titles 
-A = ['Accel X', 'Accel Y', 'Accel Z']
-G = ['Gyro X', 'Gyro Y', 'Gyro Z']
-
-
-#for logging calculated alttitude for comparison, currently just doing accelration 
-Alt_raw= list()
-Alt_kal = list()
-time_stamp = list()
-
-Accel_x = np.zeros(len(DF.index))
-
-#Values run through the kalman filter, x,y,z
-Accel_n = np.zeros(3)
-Gyro_n = np.zeros(3)
+#use a linear approximation to get the new angle 
+def calculate_angle(angular_velocity_new, angular_velocity_old, delta_time, angle):
+	slope = (angular_velocity_new - angular_velocity_old)/(delta_time)
+	angle_integration = slope*angular_velocity_new**2 - slope*angular_velocity_old**2
+	return angle + angle_integrationn
 
 
-#Kalman gain, x,y,z respectively
-K_Accel = np.zeros(3)
-K_Gyro = np.zeros(3)
-
-#Covariance, x,y,z, idfk with the initializations
-P_Accel = np.full(3, 10)
-P_Gyro = np.full(3, 10)
+ROLL = 0 #x
+PITCH = 0 #y
+YAW = 0 #z
 
 
-r_Accel = 4
-r_Gyro = 1
 
-#initialize kalman gain
-for i in range(0,2):
-	K_Accel[i] = P_Accel[i]/(P_Accel[i]+r_Accel) 
-	K_Gyro[i] = P_Gyro[i]/(P_Gyro[i]+r_Gyro)
-#initial values 
-Accel_n[0] = DF.at[0, 'Accel X']
-Accel_n[1] = DF.at[0, 'Accel Y']
-Accel_n[2] = DF.at[0, 'Accel Z']
 
-Gyro_n[0] = DF.at[0, 'Gyro X']
-Gyro_n[1] = DF.at[0, 'Gyro Y']
-Gyro_n[2] = DF.at[0, 'Gyro Z']
 
 
 for i, rows in DF.iterrows():
-	if int(DF.at[i, 'State']) > 1 and int(DF.at[i, 'State']) <4:
-		for j in range(0,2):
-			#fuck with the process noise
-			P_Accel[j] = P_Accel[j] + 1.5
-			K_Accel[j] = P_Accel[j]/(P_Accel[j] + r_Accel)
-			Accel_n[j] = Accel_n[j] + K_Accel[j]*(DF.at[i, A[j]] - Accel_n[j])
-			P_Accel[j] = (1-K_Accel[j])*P_Accel[j]
-		time_stamp.append(DF.at[i, 'Time (ms)'])
-		Alt_raw.append(DF.at[i, 'Accel Y'])
-		Alt_kal.append(Accel_n[1])
+	#calculate new angles
+	if i > 0:
+		delta_time = DF.at[i, 'Time (ms)'] - DF.at[i-1, 'Time (ms)']
+
+		#get new angles in radians
+		ROLL = calculate_angle(DF.at[i, 'Gyro X'], DF.at[i-1, 'Gryo X'], delta_time, ROLL)
+		PITCH = calculate_angle(DF.at[i, 'Gyro Y'], DF.at[i-1, 'Gyro Y'], delta_time, PITCH)
+		YAW = calculate_angle(DF.at[i, 'Gyro Z'], DF.at[i-1, 'Gyro Z'], delta_time, YAW)
+
+		#Creating Rotation matrices 
+		# YAW rotation
+		# cosYAW, -sinYAW, 0 
+		# sinYAW, cosYAW, 0
+		# 0, 0, 1
+		RZ = np.array([math.cos(YAW), math.sin(YAW), 0], [math.sin(YAW), math.cos(YAW), 0], [0, 0, 1])
+
+		#Pitch rotation 
+		# cosPitch, 0, sinPitch
+		# 0, 1, 0
+		# -sinPitch, 0, cosPitch 
+		RY = np.array([math.cos(PITCH), 0, math.sin(PITCH)], [0, 1, 0], [-math.sin(PITCH), 0, math.cos(PITCH)])
+
+		#Roll Rotation
+		# 1, 0, 0
+		# 0, cosRoll, -sinRoll
+		# 0, sinRoll, cosRoll
+		RX = np.array([1, 0, 0], [0, math.cos(ROLL), -math.sin(ROLL)], [0, math.sin(ROLL), math.cos(ROLL)])
+
+
+
+
 
 
 
