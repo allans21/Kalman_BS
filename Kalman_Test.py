@@ -17,7 +17,7 @@ for i in list(DF):
 def calculate_angle(angular_velocity_new, angular_velocity_old, delta_time, angle):
 	angular_velocity_old = math.radians(angular_velocity_old)
 	angular_velocity_new = math.radians(angular_velocity_new)
-	slope = (angular_velocity_new - angular_velocity_old)/(delta_time/1000)
+	slope = (angular_velocity_new - angular_velocity_old)/(delta_time)
 	angle_integration = (slope*angular_velocity_new**2 - slope*angular_velocity_old**2)/2
 	#if abs(angular_velocity_old) > 12 and abs(angular_velocity_new) > 12:
 	return angle + angle_integration
@@ -29,6 +29,14 @@ ROLL = 0 #x
 PITCH = 0 #y
 YAW = 0 #z
 
+G = 11.5
+
+velocity = 0
+altitude = 0
+alt_2 = 0
+CALC_ALTITUDES = list()
+TRUE_ALTITUDES = list()
+
 
 
 #lists for graph 
@@ -36,11 +44,12 @@ alt = list()
 time_stamp = list()
 accel_z = list()
 
+launched = False
 
 for i, rows in DF.iterrows():
 	#calculate new angles
-	if i > 0:
-		delta_time = DF.at[i, 'Time (ms)'] - DF.at[i-1, 'Time (ms)']
+	if i > 1 and DF.at[i, 'State'] > 0 and DF.at[i, 'State'] < 8:
+		delta_time = (DF.at[i, 'Time (ms)'] - DF.at[i-1, 'Time (ms)'])/1000 #IN S
 
 		#get new angles in radians
 		ROLL = calculate_angle(DF.at[i, 'Gyro X'], DF.at[i-1, 'Gyro X'], delta_time, ROLL)
@@ -74,10 +83,32 @@ for i, rows in DF.iterrows():
 		R = np.dot(RZ, RY)
 		R = np.dot(R, RX)
 		A_orient = np.dot(R, A)
-		if DF.at[i, 'State'] == 2 or DF.at[i, 'State'] == 3:
+
+		if A_orient[2] < -15: 
+			launched = True
+
+		if launched:
+			altitude = altitude + delta_time*velocity - ((A_orient[2]+G)*0.5*delta_time**2)
+			alt_2 = alt_2 + delta_time*velocity - ((DF.at[i, 'Accel Z'] + G)*0.5*delta_time**2)
+			if DF.at[i, 'State'] < 5:
+				print('ACCEL DIFF: ' + str((A_orient[2]+G) - (DF.at[i, 'Accel Z'] + G)))
+				print('HEIGHT DIFF: ' + str(altitude - alt_2))
+		# (-((delta_time/1000)*(A_orient[2]+11.15)) + velocity)/2*(delta_time/1000)
+		# print(A_orient[2] + 11)
+		# print('')
+		# print(str(altitude) + '					' + str(DF.at[i, 'Our - Altitude (m)']) )
+			velocity = velocity - (delta_time*(A_orient[2]+G))
+		#print(((delta_time/1000)*(A_orient[2]+11.07)))
+		if altitude >= 0:
+			CALC_ALTITUDES.append(alt_2)
+			TRUE_ALTITUDES.append(DF.at[i, 'Our - Altitude (m)'])
+		
 			time_stamp.append(DF.at[i, 'Time (ms)'])
-			alt.append(DF.at[i, 'Accel Z'])
-			accel_z.append(A_orient[2])
+
+		# if DF.at[i, 'State'] == 1:
+		# 	time_stamp.append(DF.at[i, 'Time (ms)'])
+		# 	alt.append(DF.at[i, 'Accel Z'])
+		# 	accel_z.append(A_orient[2])
 			#print(str(math.degrees(ROLL)) + '			' + str(math.degrees(PITCH)) + '		' + str(math.degrees(YAW)))
 		#print(str(A_orient[2]) + '			' + str(DF.at[i, 'State']) + '			' +str(DF.at[i, 'Time (ms)']))
 
@@ -89,7 +120,7 @@ for i, rows in DF.iterrows():
 
 #graph accel y comprisons
 fig = graph.Figure()
-fig.add_trace(graph.Scatter(x = time_stamp, y = alt, mode = 'markers', name = 'Z accel'))
-fig.add_trace(graph.Scatter(x = time_stamp, y = accel_z, mode = 'lines+markers', name = 'calculated Z accel'))
+fig.add_trace(graph.Scatter(x = time_stamp, y = CALC_ALTITUDES, mode = 'markers', name = 'Kin Altitudes'))
+fig.add_trace(graph.Scatter(x = time_stamp, y = TRUE_ALTITUDES, mode = 'lines+markers', name = 'Bar Altitudes'))
 
 fig.show()
